@@ -1,5 +1,5 @@
-const { queryContract } = require('../helpers/chain/cosmos');
-const { nibiru } = require('../helpers/coreAssets');
+const { queryContract } = require('../helper/chain/cosmos');
+const { nibiru } = require('../helper/coreAssets');
 
 const contractAddresses = {
     perp: 'nibi1ntmw2dfvd0qnw5fnwdu9pev2hsnqfdj9ny9n0nzh2a5u8v0scflq930mph',
