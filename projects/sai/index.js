@@ -1,4 +1,5 @@
 const { nibiru } = require('../helper/coreAssets');
+const { getBalance2 } = require('../helper/chain/cosmos')
 
 const contractAddresses = {
   perp: 'nibi1ntmw2dfvd0qnw5fnwdu9pev2hsnqfdj9ny9n0nzh2a5u8v0scflq930mph',
@@ -9,40 +10,13 @@ const contractAddresses = {
 // Wasm precompile address on Nibiru
 const WASM_PRECOMPILE_ADDRESS = '0x0000000000000000000000000000000000000802';
 
-async function queryWasmContract(api, contractAddress, queryMsg) {
-  try {
-    const queryBytes = Buffer.from(JSON.stringify(queryMsg), 'utf8');
-
-    const result = await api.call({
-      target: WASM_PRECOMPILE_ADDRESS,
-      abi: 'function query(string contractAddr, bytes req) view returns (bytes)',
-      params: [contractAddress, queryBytes]
-    });
-
-    // Handle empty responses
-    if (!result || result === '0x') {
-      throw new Error(`Empty response from Wasm query for ${contractAddress}`);
-    }
-
-    // Parse the hex response to JSON
-    const responseJson = JSON.parse(
-      Buffer.from(result.slice(2), 'hex').toString('utf8')
-    );
-
-    return responseJson;
-
-  } catch (error) {
-    console.error(`Wasm query failed for ${contractAddress}:`, error);
-    throw error;
-  }
-}
-
 async function tvl(api) {
-  const { vaultUsdc, vaultStnibi } = contractAddresses;
-
+  const { perp, vaultUsdc, vaultStnibi } = contractAddresses;
+  const block = await api.getBlock().catch(() => 'unknown');
+  
   console.log("=== SAI TVL ADAPTER DEBUG START ===");
   console.log("Chain:", api.chain);
-  console.log("Block:", await api.getBlock().catch(() => 'unknown'));
+  console.log("Block:", block);
   console.log("Contract addresses:", contractAddresses);
   console.log("Wasm precompile address:", WASM_PRECOMPILE_ADDRESS);
 
@@ -50,7 +24,7 @@ async function tvl(api) {
     // Query both vaults in parallel using multiCall
     const vaultQueries = [
       { contract: vaultUsdc, asset: nibiru.USDC, name: 'USDC vault' },
-      { contract: vaultStnibi, asset: nibiru["stNIBI"], name: 'stNIBI vault' }
+      { contract: vaultStnibi, asset: nibiru.stNIBI, name: 'stNIBI vault' }
     ];
 
     const queryMsg = { tvl: {} };
@@ -113,6 +87,30 @@ async function tvl(api) {
         console.error(`✗ Failed to parse ${name} response:`, parseError);
         console.error(`Raw result that failed:`, result);
       }
+    });
+
+
+    const tokensToFetch = [
+      { key: "USDC.nibi", symbol: nibiru.USDC },
+      { key: "stNIBI.nibi", symbol: nibiru.stNIBI },
+    ];
+
+    const relevantTokens = tokensToFetch.map(t => nibiru[t.key]);
+
+    const balancesPerp = await getBalance2({
+      owner: perp,
+      tokens: relevantTokens,
+      chain: api.chain,
+      block,
+    });
+
+    console.debug("Perp Balances", balancesPerp);
+
+    tokensToFetch.forEach(({ key, symbol }) => {
+      const normalizedKey = nibiru[key].replaceAll("/", ":");
+      api.add(symbol, balancesPerp[normalizedKey]);
+      console.log(`✓ Added ${balancesPerp[normalizedKey]} of ${symbol} to TVL`);
+
     });
 
     console.log("=== SAI TVL ADAPTER DEBUG END ===");
