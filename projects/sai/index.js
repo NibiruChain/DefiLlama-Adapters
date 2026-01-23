@@ -32,19 +32,12 @@ async function queryWasmContract(api, contractAddress, queryMsg) {
     return responseJson;
 
   } catch (error) {
-    console.error(`Wasm query failed for ${contractAddress}:`, error);
     throw error;
   }
 }
 
 async function tvl(api) {
   const { vaultUsdc, vaultStnibi } = contractAddresses;
-
-  console.log("=== SAI TVL ADAPTER DEBUG START ===");
-  console.log("Chain:", api.chain);
-  console.log("Block:", await api.getBlock().catch(() => 'unknown'));
-  console.log("Contract addresses:", contractAddresses);
-  console.log("Wasm precompile address:", WASM_PRECOMPILE_ADDRESS);
 
   try {
     // Query both vaults in parallel using multiCall
@@ -58,16 +51,10 @@ async function tvl(api) {
       Buffer.from(JSON.stringify(queryMsg), 'utf8')
     );
 
-    console.log("Query message:", queryMsg);
-    console.log("Query bytes length:", queryBytes[0].length);
-    console.log("Query bytes hex:", queryBytes[0].toString('hex'));
-
-    console.log("Making multiCall with params:");
     const calls = queryBytes.map((bytes, i) => ({
       target: WASM_PRECOMPILE_ADDRESS,
       params: [vaultQueries[i].contract, bytes]
     }));
-    console.log("Calls:", JSON.stringify(calls, null, 2));
 
     const results = await api.multiCall({
       abi: 'function query(string contractAddr, bytes req) view returns (bytes)',
@@ -75,51 +62,26 @@ async function tvl(api) {
       permitFailure: true
     });
 
-    console.log("Raw results from multiCall:", results);
-    console.log("Results length:", results.length);
-
     // Process results
     results.forEach((result, i) => {
-      const { contract, asset, name } = vaultQueries[i];
-
-      console.log(`\n--- Processing ${name} ---`);
-      console.log(`Contract: ${contract}`);
-      console.log(`Asset: ${asset}`);
-      console.log(`Raw result:`, result);
-      console.log(`Result type:`, typeof result);
-      console.log(`Result length:`, result ? result.length : 'N/A');
+      const { asset } = vaultQueries[i];
 
       try {
         if (result && result !== '0x' && result.length > 2) {
-          console.log(`Hex data:`, result.slice(2));
-
           const hexBuffer = Buffer.from(result.slice(2), 'hex');
-          console.log(`Buffer:`, hexBuffer);
-          console.log(`Buffer string:`, hexBuffer.toString('utf8'));
-
           const tvlData = JSON.parse(hexBuffer.toString('utf8'));
-          console.log(`Parsed TVL data:`, tvlData);
 
           if (tvlData) {
             api.add(asset, tvlData);
-            console.log(`✓ Added ${tvlData} of ${asset} to TVL`);
-          } else {
-            console.warn(`⚠ TVL data is falsy for ${name}`);
           }
-        } else {
-          console.warn(`⚠ Empty or invalid response for ${name}: ${result}`);
         }
       } catch (parseError) {
-        console.error(`✗ Failed to parse ${name} response:`, parseError);
-        console.error(`Raw result that failed:`, result);
+        // Silently skip invalid responses (permitFailure: true allows this)
       }
     });
 
-    console.log("=== SAI TVL ADAPTER DEBUG END ===");
-
   } catch (error) {
-    console.error(`✗ Error fetching Sai TVL:`, error);
-    console.error("Error stack:", error.stack);
+    throw error;
   }
 }
 
